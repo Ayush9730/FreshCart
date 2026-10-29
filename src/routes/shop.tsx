@@ -20,6 +20,8 @@ import {
   ShieldCheck,
   ArrowRight,
   PackageCheck,
+  Truck,
+  MapPin,
 } from "lucide-react";
 import { CATEGORIES, type Product } from "@/lib/catalog";
 import { fetchProducts } from "@/lib/products";
@@ -95,6 +97,7 @@ type Bill = {
   paymentStatus?: "UNPAID" | "PAID";
   paymentId?: string;
   razorpayOrderId?: string;
+  confirmedAt?: string;
 };
 
 const TIMES = [
@@ -119,6 +122,7 @@ function Index() {
   const [bills, setBills] = useState<Bill[]>([]);
   const [generatedBill, setGeneratedBill] = useState<Bill | null>(null);
   const [paymentLoading, setPaymentLoading] = useState(false);
+  const [confirmedOrder, setConfirmedOrder] = useState<Bill | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -359,8 +363,16 @@ function Index() {
       }
 
       if (existingOrder?.payment_status === "paid") {
-        updateBill({ ...bill, paymentStatus: "PAID" });
-        alert("This order has already been paid.");
+        const alreadyConfirmedBill: Bill = {
+          ...bill,
+          paymentStatus: "PAID",
+          confirmedAt: bill.confirmedAt || new Date().toISOString(),
+        };
+        updateBill(alreadyConfirmedBill);
+        setConfirmedOrder(alreadyConfirmedBill);
+        setCart({});
+        setShowCart(false);
+        setShowHistory(false);
         return;
       }
 
@@ -508,7 +520,7 @@ function Index() {
                 }))
               : bill.items;
 
-            updateBill({
+            const confirmedBill: Bill = {
               ...bill,
               items: updatedItems,
               subtotal: Number.isFinite(Number(orderData.subtotal))
@@ -521,11 +533,16 @@ function Index() {
               paymentStatus: "PAID",
               paymentId: response.razorpay_payment_id,
               razorpayOrderId: response.razorpay_order_id,
-            });
+              confirmedAt: new Date().toISOString(),
+            };
 
-            alert(
-              "Payment successful! The backend verified the payment and confirmed the order was saved."
-            );
+            // Show the confirmation screen only after the backend verifies
+            // the Razorpay signature and confirms the order was saved.
+            updateBill(confirmedBill);
+            setConfirmedOrder(confirmedBill);
+            setCart({});
+            setShowCart(false);
+            setShowHistory(false);
           } catch (error) {
             alert(
               error instanceof Error
@@ -1273,6 +1290,118 @@ function Index() {
             </div>
           )}
         </Drawer>
+      )}
+
+      {confirmedOrder && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-foreground/50 p-3 backdrop-blur-sm sm:p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="freshcart-order-confirmed-title"
+        >
+          <section className="my-auto w-full max-w-lg overflow-hidden rounded-[2rem] border border-border bg-background shadow-2xl">
+            <div className="relative overflow-hidden bg-primary px-6 pb-8 pt-7 text-primary-foreground sm:px-8">
+              <div className="pointer-events-none absolute -right-8 -top-10 h-36 w-36 rounded-full border-[22px] border-primary-foreground/10" />
+              <div className="relative flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary-foreground/15">
+                    <ShoppingBasket className="h-5 w-5" />
+                  </span>
+                  <span className="font-display text-xl font-extrabold">FreshCart<span className="text-accent">.</span></span>
+                </div>
+                <span className="inline-flex items-center gap-1 rounded-full bg-primary-foreground/15 px-3 py-1.5 text-xs font-semibold">
+                  <CheckCircle2 className="h-4 w-4" /> Payment verified
+                </span>
+              </div>
+              <div className="relative mt-7 text-center">
+                <span className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-primary-foreground text-primary shadow-lg">
+                  <CheckCircle2 className="h-11 w-11" />
+                </span>
+                <h2 id="freshcart-order-confirmed-title" className="mt-4 font-display text-3xl font-extrabold tracking-tight sm:text-4xl">
+                  Order confirmed!
+                </h2>
+                <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-primary-foreground/80">
+                  Your payment was successful and your FreshCart order has been saved.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-5 p-5 sm:p-7">
+              <div className="rounded-2xl border border-primary/20 bg-secondary/50 p-5 text-center">
+                <p className="flex items-center justify-center gap-2 text-sm font-semibold text-muted-foreground">
+                  <Clock className="h-4 w-4" /> Estimated delivery
+                </p>
+                <p className="mt-2 font-display text-3xl font-extrabold text-primary">5–10 minutes</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Estimated arrival window: {(() => {
+                    const confirmedAt = confirmedOrder.confirmedAt
+                      ? new Date(confirmedOrder.confirmedAt)
+                      : new Date();
+                    const earliest = new Date(confirmedAt.getTime() + 5 * 60 * 1000);
+                    const latest = new Date(confirmedAt.getTime() + 10 * 60 * 1000);
+                    const formatTime = (date: Date) => date.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
+                    return `${formatTime(earliest)} – ${formatTime(latest)}`;
+                  })()}
+                </p>
+                <p className="mt-2 text-[11px] text-muted-foreground">Illustrative estimate; actual delivery depends on preparation and availability.</p>
+              </div>
+
+              <div className="rounded-2xl border border-border p-4">
+                <div className="flex items-start gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-green-100 text-green-700">
+                    <PackageCheck className="h-5 w-5" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-bold">Order details</p>
+                    <p className="mt-1 break-all text-sm text-muted-foreground">{confirmedOrder.id}</p>
+                    <p className="mt-2 text-sm text-muted-foreground">{confirmedOrder.items.reduce((sum, item) => sum + item.quantity, 0)} items · Total paid</p>
+                    <p className="mt-0.5 font-display text-xl font-extrabold text-primary">₹{confirmedOrder.total.toFixed(2)}</p>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-green-100 px-2.5 py-1 text-xs font-bold text-green-700">PAID</span>
+                </div>
+              </div>
+
+              <div className="space-y-3 px-1">
+                <div className="flex items-start gap-3">
+                  <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+                  <div>
+                    <p className="text-sm font-semibold">Order placed</p>
+                    <p className="text-xs text-muted-foreground">Your order has been received.</p>
+                  </div>
+                </div>
+                <div className="ml-2.5 h-4 border-l-2 border-dashed border-border" />
+                <div className="flex items-start gap-3">
+                  <PackageCheck className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+                  <div>
+                    <p className="text-sm font-semibold">Preparing your groceries</p>
+                    <p className="text-xs text-muted-foreground">Your items are ready to move through the delivery process.</p>
+                  </div>
+                </div>
+                <div className="ml-2.5 h-4 border-l-2 border-dashed border-border" />
+                <div className="flex items-start gap-3">
+                  <Truck className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
+                  <div>
+                    <p className="text-sm font-semibold">On the way to you</p>
+                    <p className="text-xs text-muted-foreground">Delivery status updates can be added when courier tracking is connected.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-2 rounded-xl bg-muted/60 p-3 text-xs leading-5 text-muted-foreground">
+                <MapPin className="mt-0.5 h-4 w-4 shrink-0" />
+                <p>Delivery estimate is a UI estimate only. FreshCart does not currently have live courier-location tracking.</p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setConfirmedOrder(null)}
+                className="flex w-full items-center justify-center gap-2 rounded-full bg-primary px-6 py-3.5 font-bold text-primary-foreground shadow-sm transition hover:opacity-90"
+              >
+                Continue shopping <ArrowRight className="h-4 w-4" />
+              </button>
+            </div>
+          </section>
+        </div>
       )}
     </div>
   );
